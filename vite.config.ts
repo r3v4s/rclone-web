@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import pkg from './package.json' with { type: 'json' }
+import { createAppDataMiddleware } from './server/app-data'
 
 const RC_ADDR = '127.0.0.1'
 const RC_PORT = '5572'
@@ -63,9 +64,19 @@ function devRclone(): import('vite').Plugin {
     }
 }
 
+function appDataApi(): import('vite').Plugin {
+    return {
+        name: 'app-data-api',
+        apply: 'serve',
+        configureServer(server) {
+            server.middlewares.use(createAppDataMiddleware(server.config.logger))
+        },
+    }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-    plugins: [react(), tailwindcss(), devRclone()],
+    plugins: [react(), tailwindcss(), appDataApi(), devRclone()],
     define: {
         APP_VERSION: JSON.stringify(pkg.version),
     },

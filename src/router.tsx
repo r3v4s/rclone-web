@@ -10,9 +10,12 @@ import { RemotesPage } from '@/pages/Remotes'
 import { RemotesDetailsPage } from '@/pages/RemotesDetails'
 import { RemotesEditPage } from '@/pages/RemotesEdit'
 import { RemotesNewPage } from '@/pages/RemotesNew'
+import { SchedulerPage } from '@/pages/Scheduler'
 import { ServesPage } from '@/pages/Serves'
 import { ServesNewPage } from '@/pages/ServesNew'
 import { SettingsPage } from '@/pages/Settings'
+import { TransferPresetsPage } from '@/pages/TransferPresets'
+import { TransfersAdvancedPage } from '@/pages/TransfersAdvanced'
 import App from './App'
 import { TransfersPage } from './pages/Transfers'
 
@@ -72,6 +75,9 @@ export const router = createBrowserRouter([
                     { path: 'serves', element: <ServesPage /> },
                     { path: 'serves/new', element: <ServesNewPage /> },
                     { path: 'transfers', element: <TransfersPage /> },
+                    { path: 'transfers-adv', element: <TransfersAdvancedPage /> },
+                    { path: 'transfer-presets', element: <TransferPresetsPage /> },
+                    { path: 'scheduler', element: <SchedulerPage /> },
                     { path: 'jobs-old', element: <JobsOldPage /> },
                     { path: 'settings', element: <SettingsPage /> },
                 ],
