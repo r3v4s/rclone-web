@@ -294,8 +294,25 @@ export function quoteArg(value: string) {
     return /^[A-Za-z0-9_./:=+-]+$/.test(value) ? value : JSON.stringify(value)
 }
 
-export function buildPresetCli(preset: Pick<TransferPreset, 'mode' | 'args'>) {
-    return ['rclone', preset.mode, ...normalizeRcloneArgs(preset.args)].map(quoteArg).join(' ')
+export function buildPresetCli(
+    preset: Pick<TransferPreset, 'mode'> & Partial<Pick<TransferPreset, 'args' | 'preview'>>
+) {
+    const args = Array.isArray(preset.args) ? normalizeRcloneArgs(preset.args.map(String)) : []
+    if (args.length > 0) {
+        return ['rclone', preset.mode, ...args].map(quoteArg).join(' ')
+    }
+
+    const preview = typeof preset.preview === 'string' ? preset.preview.trim() : ''
+    if (!preview) {
+        return ['rclone', preset.mode].map(quoteArg).join(' ')
+    }
+
+    try {
+        const draft = parseRcloneCommandToDraft(preview)
+        return ['rclone', draft.mode, ...draft.args].map(quoteArg).join(' ')
+    } catch {
+        return preview
+    }
 }
 
 export function getTransferExecutionMode(

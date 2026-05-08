@@ -249,7 +249,7 @@ export function TransferPresetsPage() {
 
     async function handleCopyPreset(preset: TransferPreset) {
         try {
-            await navigator.clipboard.writeText(buildPresetCli(preset))
+            await copyText(buildPresetCli(preset))
             toast.success(t('transferPresets.copySuccess'))
         } catch {
             toast.error(t('transferPresets.copyError'))
@@ -601,4 +601,31 @@ export function TransferPresetsPage() {
 
 function formatExecutionMode(mode: TransferExecutionMode) {
     return mode === 'rc' ? 'RC native' : 'CLI'
+}
+
+async function copyText(value: string) {
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(value)
+            return
+        } catch {}
+    }
+
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.left = '-9999px'
+    textarea.style.top = '0'
+    document.body.append(textarea)
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+
+    try {
+        if (!document.execCommand('copy')) {
+            throw new Error('Fallback copy failed.')
+        }
+    } finally {
+        textarea.remove()
+    }
 }
