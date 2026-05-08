@@ -4,6 +4,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Connect } from 'vite'
+import {
+    buildNativeTransferRequest,
+    normalizeExecutionMode,
+    normalizeRcloneArgs,
+    type TransferExecutionMode,
+} from '../src/lib/transfer-runtime'
 
 type TransferMode = 'copy' | 'move' | 'sync'
 type ScheduleKind = 'interval' | 'cron'
@@ -18,6 +24,7 @@ type RcloneConnection = {
 
 type ScheduledCommand = {
     mode: TransferMode
+    executionMode?: TransferExecutionMode
     source: string
     target: string
     args: string[]
@@ -424,15 +431,7 @@ async function executeScheduleRun(
     const startedMs = Date.now()
 
     try {
-        const startResponse = await rcloneRequest<{ jobid?: number }>(
-            schedule.rc,
-            '/core/command',
-            {
-                command: schedule.command.mode,
-                arg: schedule.command.args,
-            },
-            { _async: 'true' }
-        )
+        const startResponse = await startScheduledRcloneJob(schedule)
         const jobid = Number(startResponse.jobid)
 
         if (!Number.isFinite(jobid)) {
@@ -492,6 +491,23 @@ async function executeScheduleRun(
             saveSchedule(db, latest)
         }
     }
+}
+
+function startScheduledRcloneJob(schedule: TransferSchedule) {
+    if (normalizeExecutionMode(schedule.command.executionMode) === 'rc') {
+        const request = buildNativeTransferRequest(schedule.command)
+        return rcloneRequest<{ jobid?: number }>(schedule.rc, request.endpoint, request.body)
+    }
+
+    return rcloneRequest<{ jobid?: number }>(
+        schedule.rc,
+        '/core/command',
+        {
+            command: schedule.command.mode,
+            arg: normalizeRcloneArgs(schedule.command.args),
+        },
+        { _async: 'true' }
+    )
 }
 
 async function fetchRunSnapshot(rc: RcloneConnection, jobid: number) {
@@ -607,6 +623,7 @@ function normalizeCommand(value: unknown): ScheduledCommand {
 
     return {
         mode,
+        executionMode: normalizeExecutionMode(record.executionMode),
         source,
         target,
         args: normalizedArgs,

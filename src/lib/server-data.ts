@@ -1,4 +1,5 @@
 import type { PresetTransferMode, TransferPreset } from '@/lib/transfer-presets'
+import type { TransferExecutionMode } from '@/lib/transfer-runtime'
 
 export type RcloneConnection = {
     url: string
@@ -8,6 +9,7 @@ export type RcloneConnection = {
 
 export type ScheduledCommand = {
     mode: PresetTransferMode
+    executionMode?: TransferExecutionMode
     source: string
     target: string
     args: string[]

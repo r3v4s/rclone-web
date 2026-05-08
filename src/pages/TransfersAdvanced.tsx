@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     ArrowRightIcon,
     BookmarkIcon,
@@ -74,10 +74,16 @@ import {
     upsertTransferHistory,
 } from '@/lib/server-data'
 import {
+    getTransferExecutionMode,
     loadTransferPresets,
     TRANSFER_PRESETS_KEY,
     type TransferPreset,
 } from '@/lib/transfer-presets'
+import {
+    buildNativeTransferRequest,
+    normalizeRcloneArgs,
+    type TransferExecutionMode,
+} from '@/lib/transfer-runtime'
 import { cn } from '@/lib/ui'
 import rclone from '@/rclone/client'
 import { fetchRemotesList } from '@/rclone/usage'
@@ -113,6 +119,7 @@ type TransferOptions = {
 
 type TransferCommand = {
     mode: TransferMode
+    executionMode: TransferExecutionMode
     source: string
     target: string
     args: string[]
@@ -257,10 +264,11 @@ export function TransfersAdvancedPage() {
     const [sourcePath, setSourcePath] = useState('/')
     const [targetPath, setTargetPath] = useState('')
     const [mode, setMode] = useState<TransferMode>('copy')
+    const [executionMode, setExecutionMode] = useState<TransferExecutionMode>('rc')
     const [optionsMenu, setOptionsMenu] = useState<OptionsMenu>('common')
     const [transferOptions, setTransferOptions] = useState<TransferOptions>(defaultTransferOptions)
     const [manualFlags, setManualFlags] = useState(
-        '--exclude "*.tmp"\n--max-age 30d\n--drive-chunk-size 64M'
+        '--exclude "*.tmp"\n--max-age 30d\n--min-size 1M'
     )
     const [browseSession, setBrowseSession] = useState<BrowseSession>(null)
     const [history, setHistory] = useState<TransferRecord[]>([])
@@ -349,6 +357,7 @@ export function TransfersAdvancedPage() {
         try {
             return buildTransferCommand({
                 mode,
+                executionMode,
                 sourceKind,
                 sourceRemote,
                 sourcePath,
@@ -364,6 +373,7 @@ export function TransfersAdvancedPage() {
     }, [
         manualFlags,
         mode,
+        executionMode,
         sourceKind,
         sourcePath,
         sourceRemote,
@@ -415,7 +425,7 @@ export function TransfersAdvancedPage() {
         }
 
         setActiveTransfer(nextRecord)
-        upsertHistoryRecord(nextRecord, setHistory)
+        upsertHistoryRecord(nextRecord, setHistory, queryClient)
         queryClient.invalidateQueries({ queryKey: ['jobs'] })
 
         if (nextStatus === 'completed') {
@@ -431,9 +441,10 @@ export function TransfersAdvancedPage() {
                 input.source === 'record'
                     ? input.record
                     : input.source === 'preset'
-                      ? input.preset
+                      ? presetToCommand(input.preset)
                       : buildTransferCommand({
                             mode,
+                            executionMode,
                             sourceKind,
                             sourceRemote,
                             sourcePath,
@@ -444,13 +455,7 @@ export function TransfersAdvancedPage() {
                             manualFlags,
                         })
 
-            const response = await rclone('/core/command', {
-                params: { query: { _async: true } },
-                body: {
-                    command: command.mode,
-                    arg: command.args,
-                },
-            })
+            const response = await startTransferCommand(command)
             const jobid = getJobId(response)
             const now = new Date().toISOString()
 
@@ -460,6 +465,7 @@ export function TransfersAdvancedPage() {
                 group: `job/${jobid}`,
                 status: 'running',
                 mode: command.mode,
+                executionMode: command.executionMode,
                 source: command.source,
                 target: command.target,
                 args: command.args,
@@ -490,7 +496,7 @@ export function TransfersAdvancedPage() {
         },
         onSuccess: (record) => {
             setActiveTransfer(record)
-            upsertHistoryRecord(record, setHistory)
+            upsertHistoryRecord(record, setHistory, queryClient)
             queryClient.invalidateQueries({ queryKey: ['jobs'] })
             toast.success(t('transfersAdv.startSuccess', { id: record.jobid }))
         },
@@ -524,7 +530,7 @@ export function TransfersAdvancedPage() {
         },
         onSuccess: (record) => {
             setActiveTransfer(record)
-            upsertHistoryRecord(record, setHistory)
+            upsertHistoryRecord(record, setHistory, queryClient)
             queryClient.invalidateQueries({ queryKey: ['jobs'] })
             toast.success(
                 record.status === 'paused'
@@ -554,6 +560,7 @@ export function TransfersAdvancedPage() {
         setSourcePath('/')
         setTargetPath('')
         setMode('copy')
+        setExecutionMode('rc')
         setTransferOptions(defaultTransferOptions)
         setManualFlags('')
     }
@@ -742,6 +749,35 @@ export function TransfersAdvancedPage() {
 
                         <Card>
                             <CardHeader>
+                                <CardTitle>{t('transfersAdv.executionTitle')}</CardTitle>
+                                <CardDescription>
+                                    {t('transfersAdv.executionDescription')}
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <ExecutionModeCard
+                                        value="rc"
+                                        active={executionMode === 'rc'}
+                                        icon={RefreshCwIcon}
+                                        title={t('transfersAdv.executionRc')}
+                                        description={t('transfersAdv.executionRcDescription')}
+                                        onSelect={setExecutionMode}
+                                    />
+                                    <ExecutionModeCard
+                                        value="cli"
+                                        active={executionMode === 'cli'}
+                                        icon={TerminalIcon}
+                                        title={t('transfersAdv.executionCli')}
+                                        description={t('transfersAdv.executionCliDescription')}
+                                        onSelect={setExecutionMode}
+                                    />
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
                                 <div>
                                     <CardTitle>{t('transfersAdv.optionsTitle')}</CardTitle>
                                     <CardDescription>
@@ -833,6 +869,11 @@ export function TransfersAdvancedPage() {
                                                     <span className="truncate text-sm font-medium">
                                                         {preset.name}
                                                     </span>
+                                                    <Badge variant="outline">
+                                                        {formatExecutionMode(
+                                                            getTransferExecutionMode(preset)
+                                                        )}
+                                                    </Badge>
                                                 </div>
                                                 <div className="mt-1 truncate text-xs text-muted-foreground">
                                                     {preset.mode} {preset.source} to {preset.target}
@@ -1274,6 +1315,44 @@ function ModeCard({
             )}
         >
             <Icon className="mb-4 size-5" />
+            <div className="text-base font-medium">{title}</div>
+            <div
+                className={cn('mt-1 text-sm', active ? 'text-primary/80' : 'text-muted-foreground')}
+            >
+                {description}
+            </div>
+        </button>
+    )
+}
+
+function ExecutionModeCard({
+    value,
+    active,
+    icon: Icon,
+    title,
+    description,
+    onSelect,
+}: {
+    value: TransferExecutionMode
+    active: boolean
+    icon: LucideIcon
+    title: string
+    description: string
+    onSelect: (value: TransferExecutionMode) => void
+}) {
+    return (
+        <button
+            type="button"
+            aria-pressed={active}
+            onClick={() => onSelect(value)}
+            className={cn(
+                'min-h-28 rounded-xl border p-4 text-left transition-colors',
+                active
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'bg-background hover:bg-muted/60'
+            )}
+        >
+            <Icon className="mb-3 size-5" />
             <div className="text-base font-medium">{title}</div>
             <div
                 className={cn('mt-1 text-sm', active ? 'text-primary/80' : 'text-muted-foreground')}
@@ -1850,6 +1929,7 @@ async function fetchTransferSnapshot(record: TransferRecord): Promise<TransferSn
 
 function buildTransferCommand({
     mode,
+    executionMode,
     sourceKind,
     sourceRemote,
     sourcePath,
@@ -1860,6 +1940,7 @@ function buildTransferCommand({
     manualFlags,
 }: {
     mode: TransferMode
+    executionMode: TransferExecutionMode
     sourceKind: PathKind
     sourceRemote: string
     sourcePath: string
@@ -1879,20 +1960,47 @@ function buildTransferCommand({
 
     const source = resolvePath(sourceKind, sourceRemote, sourcePath)
     const target = resolvePath(targetKind, targetRemote, targetPath)
-    const args = [
+    const args = normalizeRcloneArgs([
         source,
         target,
         ...buildCommonOptionArgs(options),
         ...parseManualFlags(manualFlags),
-    ]
+    ])
 
     return {
         mode,
+        executionMode,
         source,
         target,
         args,
         preview: ['rclone', mode, ...args].map(quoteArg).join(' '),
     }
+}
+
+function presetToCommand(preset: TransferPreset): TransferCommand {
+    return {
+        mode: preset.mode,
+        executionMode: getTransferExecutionMode(preset),
+        source: preset.source,
+        target: preset.target,
+        args: preset.args,
+        preview: preset.preview,
+    }
+}
+
+async function startTransferCommand(command: TransferCommand) {
+    if (command.executionMode === 'rc') {
+        const request = buildNativeTransferRequest(command)
+        return await rclone(request.endpoint, { body: request.body })
+    }
+
+    return await rclone('/core/command', {
+        params: { query: { _async: true } },
+        body: {
+            command: command.mode,
+            arg: normalizeRcloneArgs(command.args),
+        },
+    })
 }
 
 function buildCommonOptionArgs(options: TransferOptions) {
@@ -2088,6 +2196,7 @@ function buildLiveLogs(record: TransferRecord | null, snapshot: TransferSnapshot
 
     const lines = [
         `${formatTime(record.startedAt)} job/${record.jobid}: ${record.mode} started`,
+        `execution: ${formatExecutionMode(record.executionMode)}`,
         `source: ${record.source}`,
         `target: ${record.target}`,
     ]
@@ -2168,7 +2277,8 @@ function isTransferRecord(value: unknown): value is TransferRecord {
 
 function upsertHistoryRecord(
     record: TransferRecord,
-    setHistory: React.Dispatch<React.SetStateAction<TransferRecord[]>>
+    setHistory: React.Dispatch<React.SetStateAction<TransferRecord[]>>,
+    queryClient?: QueryClient
 ) {
     if (!record.keepHistory) return
 
@@ -2177,10 +2287,15 @@ function upsertHistoryRecord(
             0,
             HISTORY_LIMIT
         )
+        queryClient?.setQueryData(['advanced-transfer-history'], next)
         return next
     })
 
-    void upsertTransferHistory(record).catch(() => {})
+    void upsertTransferHistory(record)
+        .then(() => {
+            queryClient?.invalidateQueries({ queryKey: ['advanced-transfer-history'] })
+        })
+        .catch(() => {})
 }
 
 function formatTransferSize(record: TransferRecord) {
@@ -2188,6 +2303,10 @@ function formatTransferSize(record: TransferRecord) {
         return `${formatBytes(record.bytes)} / ${formatBytes(record.totalBytes)}`
     }
     return formatBytes(record.bytes)
+}
+
+function formatExecutionMode(mode: TransferExecutionMode) {
+    return mode === 'rc' ? 'RC native' : 'CLI'
 }
 
 function resolvePath(kind: PathKind, remote: string | undefined, path: string) {

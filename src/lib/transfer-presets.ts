@@ -1,3 +1,9 @@
+import {
+    normalizeExecutionMode,
+    normalizeRcloneArgs,
+    type TransferExecutionMode,
+} from '@/lib/transfer-runtime'
+
 export type PresetTransferMode = 'copy' | 'move' | 'sync'
 
 export type TransferPreset = {
@@ -5,6 +11,7 @@ export type TransferPreset = {
     name: string
     description: string
     mode: PresetTransferMode
+    executionMode?: TransferExecutionMode
     source: string
     target: string
     args: string[]
@@ -42,6 +49,7 @@ const FLAGS_WITH_VALUES = new Set([
     '--max-age',
     '--metadata-exclude',
     '--metadata-include',
+    '--metadata-filter',
     '--min-age',
     '--multi-thread-cutoff',
     '--multi-thread-streams',
@@ -60,6 +68,7 @@ export function buildPresetDraft({
     name,
     description,
     mode,
+    executionMode = 'rc',
     source,
     target,
     manualFlags,
@@ -69,6 +78,7 @@ export function buildPresetDraft({
     name: string
     description: string
     mode: PresetTransferMode
+    executionMode?: TransferExecutionMode
     source: string
     target: string
     manualFlags: string
@@ -91,12 +101,17 @@ export function buildPresetDraft({
         throw new Error('Target path is required.')
     }
 
-    const args = [normalizedSource, normalizedTarget, ...parseManualFlags(manualFlags)]
+    const args = normalizeRcloneArgs([
+        normalizedSource,
+        normalizedTarget,
+        ...parseManualFlags(manualFlags),
+    ])
 
     return {
         name: normalizedName,
         description: description.trim(),
         mode,
+        executionMode,
         source: normalizedSource,
         target: normalizedTarget,
         args,
@@ -171,12 +186,13 @@ export function parseRcloneCommandToDraft(commandLine: string): TransferPresetDr
     const { source, target, optionArgs: commandOptionArgs } = parsedArgs
     const optionArgs = [...prefixArgs, ...commandOptionArgs]
     const draftName = `${mode} ${source} to ${target}`
-    const args = [source, target, ...optionArgs]
+    const args = normalizeRcloneArgs([source, target, ...optionArgs])
 
     return {
         name: draftName,
         description: '',
         mode,
+        executionMode: 'cli',
         source,
         target,
         args,
@@ -200,12 +216,18 @@ export function parseManualFlags(value: string) {
 
 export function formatManualFlags(args: string[]) {
     const lines: string[] = []
+    const normalizedArgs = normalizeRcloneArgs(args)
 
-    for (let index = 0; index < args.length; index += 1) {
-        const current = args[index]
-        const next = args[index + 1]
+    for (let index = 0; index < normalizedArgs.length; index += 1) {
+        const current = normalizedArgs[index]
+        const next = normalizedArgs[index + 1]
 
-        if (current?.startsWith('-') && next && !next.startsWith('-') && !current.includes('=')) {
+        if (
+            current?.startsWith('-') &&
+            next &&
+            !current.includes('=') &&
+            (flagConsumesValue(current) || !next.startsWith('-'))
+        ) {
             lines.push(`${quoteArg(current)} ${quoteArg(next)}`)
             index += 1
             continue
@@ -270,6 +292,12 @@ export function parseShellArgs(value: string) {
 
 export function quoteArg(value: string) {
     return /^[A-Za-z0-9_./:=+-]+$/.test(value) ? value : JSON.stringify(value)
+}
+
+export function getTransferExecutionMode(
+    preset: Pick<TransferPreset, 'executionMode'> | null | undefined
+) {
+    return normalizeExecutionMode(preset?.executionMode, 'cli')
 }
 
 function isTransferMode(value: string): value is PresetTransferMode {

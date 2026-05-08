@@ -57,6 +57,7 @@ import {
     buildPresetDraft,
     createTransferPreset,
     formatManualFlags,
+    getTransferExecutionMode,
     loadTransferPresets,
     type PresetTransferMode,
     parseRcloneCommandToDraft,
@@ -64,11 +65,16 @@ import {
     type TransferPreset,
     updateTransferPreset,
 } from '@/lib/transfer-presets'
+import type { TransferExecutionMode } from '@/lib/transfer-runtime'
 
 const modeItems = [
     { label: 'copy', value: 'copy' },
     { label: 'move', value: 'move' },
     { label: 'sync', value: 'sync' },
+]
+const executionModeItems = [
+    { label: 'RC native', value: 'rc' },
+    { label: 'CLI', value: 'cli' },
 ]
 const defaultPresetFlags = '--transfers 4\n--checkers 8\n--stats 1s\n--log-level INFO'
 
@@ -80,6 +86,7 @@ export function TransferPresetsPage() {
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [mode, setMode] = useState<PresetTransferMode>('copy')
+    const [executionMode, setExecutionMode] = useState<TransferExecutionMode>('rc')
     const [source, setSource] = useState('')
     const [target, setTarget] = useState('')
     const [manualFlags, setManualFlags] = useState(defaultPresetFlags)
@@ -140,6 +147,7 @@ export function TransferPresetsPage() {
                     name,
                     description,
                     mode,
+                    executionMode,
                     source,
                     target,
                     manualFlags,
@@ -154,13 +162,25 @@ export function TransferPresetsPage() {
                 error: error instanceof Error ? error.message : t('common.unknownError'),
             }
         }
-    }, [description, keepHistory, manualFlags, mode, name, retryAfterFinish, source, target, t])
+    }, [
+        description,
+        executionMode,
+        keepHistory,
+        manualFlags,
+        mode,
+        name,
+        retryAfterFinish,
+        source,
+        target,
+        t,
+    ])
 
     function resetForm() {
         setEditingId(null)
         setName('')
         setDescription('')
         setMode('copy')
+        setExecutionMode('rc')
         setSource('')
         setTarget('')
         setManualFlags(defaultPresetFlags)
@@ -187,6 +207,7 @@ export function TransferPresetsPage() {
         setName(preset.name)
         setDescription(preset.description)
         setMode(preset.mode)
+        setExecutionMode(getTransferExecutionMode(preset))
         setSource(preset.source)
         setTarget(preset.target)
         setManualFlags(formatManualFlags(preset.args.slice(2)))
@@ -209,6 +230,7 @@ export function TransferPresetsPage() {
             setName(draft.name)
             setDescription(draft.description)
             setMode(draft.mode)
+            setExecutionMode(getTransferExecutionMode(draft))
             setSource(draft.source)
             setTarget(draft.target)
             setManualFlags(formatManualFlags(draft.args.slice(2)))
@@ -279,7 +301,7 @@ export function TransferPresetsPage() {
                             </CardHeader>
                             <CardContent className="space-y-5">
                                 <FieldGroup>
-                                    <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="grid gap-4 md:grid-cols-3">
                                         <Field>
                                             <FieldLabel>{t('transferPresets.name')}</FieldLabel>
                                             <Input
@@ -310,6 +332,34 @@ export function TransferPresetsPage() {
                                                                 {item.label}
                                                             </SelectItem>
                                                         ))}
+                                                    </SelectGroup>
+                                                </SelectContent>
+                                            </Select>
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel>
+                                                {t('transferPresets.executionMode')}
+                                            </FieldLabel>
+                                            <Select
+                                                items={executionModeItems}
+                                                value={executionMode}
+                                                onValueChange={(value) =>
+                                                    setExecutionMode(
+                                                        (value ?? 'rc') as TransferExecutionMode
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectGroup>
+                                                        <SelectItem value="rc">
+                                                            {t('transferPresets.executionModeRc')}
+                                                        </SelectItem>
+                                                        <SelectItem value="cli">
+                                                            {t('transferPresets.executionModeCli')}
+                                                        </SelectItem>
                                                     </SelectGroup>
                                                 </SelectContent>
                                             </Select>
@@ -494,6 +544,11 @@ export function TransferPresetsPage() {
                                                         <div className="truncate text-xs text-muted-foreground">
                                                             {preset.mode} to {preset.target}
                                                         </div>
+                                                        <Badge variant="outline">
+                                                            {formatExecutionMode(
+                                                                getTransferExecutionMode(preset)
+                                                            )}
+                                                        </Badge>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
@@ -541,4 +596,8 @@ export function TransferPresetsPage() {
             </PageContent>
         </PageWrapper>
     )
+}
+
+function formatExecutionMode(mode: TransferExecutionMode) {
+    return mode === 'rc' ? 'RC native' : 'CLI'
 }

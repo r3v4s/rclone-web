@@ -65,9 +65,11 @@ import { useStore } from '@/lib/store'
 import {
     buildPresetDraft,
     formatManualFlags,
+    getTransferExecutionMode,
     type PresetTransferMode,
     parseRcloneCommandToDraft,
 } from '@/lib/transfer-presets'
+import type { TransferExecutionMode } from '@/lib/transfer-runtime'
 import { cn } from '@/lib/ui'
 
 type CommandSource = 'cli' | 'preset' | 'builder'
@@ -85,6 +87,11 @@ const intervalUnitItems = [
     { label: 'Weeks', value: 'weeks' },
 ]
 
+const executionModeItems = [
+    { label: 'RC native', value: 'rc' },
+    { label: 'CLI', value: 'cli' },
+]
+
 export function SchedulerPage() {
     const t = useT()
     const queryClient = useQueryClient()
@@ -100,6 +107,7 @@ export function SchedulerPage() {
     )
     const [presetId, setPresetId] = useState('')
     const [builderMode, setBuilderMode] = useState<PresetTransferMode>('copy')
+    const [builderExecutionMode, setBuilderExecutionMode] = useState<TransferExecutionMode>('rc')
     const [builderSource, setBuilderSource] = useState('')
     const [builderTarget, setBuilderTarget] = useState('')
     const [builderOptions, setBuilderOptions] = useState(
@@ -143,6 +151,7 @@ export function SchedulerPage() {
         }
     }, [
         builderMode,
+        builderExecutionMode,
         builderOptions,
         builderSource,
         builderTarget,
@@ -204,6 +213,7 @@ export function SchedulerPage() {
             const draft = parseRcloneCommandToDraft(cliInput)
             return {
                 mode: draft.mode,
+                executionMode: getTransferExecutionMode(draft),
                 source: draft.source,
                 target: draft.target,
                 args: draft.args,
@@ -220,6 +230,7 @@ export function SchedulerPage() {
 
             return {
                 mode: preset.mode,
+                executionMode: getTransferExecutionMode(preset),
                 source: preset.source,
                 target: preset.target,
                 args: preset.args,
@@ -234,6 +245,7 @@ export function SchedulerPage() {
             name: name || 'Scheduled transfer',
             description,
             mode: builderMode,
+            executionMode: builderExecutionMode,
             source: builderSource,
             target: builderTarget,
             manualFlags: builderOptions,
@@ -243,6 +255,7 @@ export function SchedulerPage() {
 
         return {
             mode: draft.mode,
+            executionMode: getTransferExecutionMode(draft),
             source: draft.source,
             target: draft.target,
             args: draft.args,
@@ -309,6 +322,7 @@ export function SchedulerPage() {
         } else {
             setCommandSource('builder')
             setBuilderMode(schedule.command.mode)
+            setBuilderExecutionMode(schedule.command.executionMode ?? 'cli')
             setBuilderSource(schedule.command.source)
             setBuilderTarget(schedule.command.target)
             setBuilderOptions(formatManualFlags(schedule.command.args.slice(2)))
@@ -326,6 +340,7 @@ export function SchedulerPage() {
         setName('')
         setDescription('')
         setCommandSource('cli')
+        setBuilderExecutionMode('rc')
         setScheduleKind('interval')
         setIntervalValue('30')
         setIntervalUnit('minutes')
@@ -476,6 +491,34 @@ export function SchedulerPage() {
                                                                 {item.label}
                                                             </SelectItem>
                                                         ))}
+                                                    </SelectGroup>
+                                                </SelectContent>
+                                            </Select>
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel>
+                                                {t('transferPresets.executionMode')}
+                                            </FieldLabel>
+                                            <Select
+                                                items={executionModeItems}
+                                                value={builderExecutionMode}
+                                                onValueChange={(value) =>
+                                                    setBuilderExecutionMode(
+                                                        (value ?? 'rc') as TransferExecutionMode
+                                                    )
+                                                }
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectGroup>
+                                                        <SelectItem value="rc">
+                                                            {t('transferPresets.executionModeRc')}
+                                                        </SelectItem>
+                                                        <SelectItem value="cli">
+                                                            {t('transferPresets.executionModeCli')}
+                                                        </SelectItem>
                                                     </SelectGroup>
                                                 </SelectContent>
                                             </Select>
@@ -708,6 +751,12 @@ export function SchedulerPage() {
                                                             <div className="truncate text-xs text-muted-foreground">
                                                                 {schedule.command.preview}
                                                             </div>
+                                                            <Badge variant="outline">
+                                                                {formatExecutionMode(
+                                                                    schedule.command
+                                                                        .executionMode ?? 'cli'
+                                                                )}
+                                                            </Badge>
                                                         </div>
                                                     </TableCell>
                                                     <TableCell>
@@ -950,6 +999,10 @@ function inferScheduleName(command: ScheduledCommand) {
     }
 
     return `${command.mode} ${command.source} to ${command.target}`
+}
+
+function formatExecutionMode(mode: TransferExecutionMode) {
+    return mode === 'rc' ? 'RC native' : 'CLI'
 }
 
 function createId() {
