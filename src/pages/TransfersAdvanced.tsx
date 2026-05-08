@@ -74,6 +74,7 @@ import {
     upsertTransferHistory,
 } from '@/lib/server-data'
 import {
+    buildPresetCli,
     getTransferExecutionMode,
     loadTransferPresets,
     TRANSFER_PRESETS_KEY,
@@ -879,7 +880,7 @@ export function TransfersAdvancedPage() {
                                                     {preset.mode} {preset.source} to {preset.target}
                                                 </div>
                                                 <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                                                    {preset.preview}
+                                                    {buildPresetCli(preset)}
                                                 </div>
                                             </div>
                                             <Button
@@ -1984,7 +1985,7 @@ function presetToCommand(preset: TransferPreset): TransferCommand {
         source: preset.source,
         target: preset.target,
         args: preset.args,
-        preview: preset.preview,
+        preview: buildPresetCli(preset),
     }
 }
 

@@ -63,6 +63,7 @@ import {
 } from '@/lib/server-data'
 import { useStore } from '@/lib/store'
 import {
+    buildPresetCli,
     buildPresetDraft,
     formatManualFlags,
     getTransferExecutionMode,
@@ -234,7 +235,7 @@ export function SchedulerPage() {
                 source: preset.source,
                 target: preset.target,
                 args: preset.args,
-                preview: preset.preview,
+                preview: buildPresetCli(preset),
                 origin: 'preset',
                 presetId: preset.id,
                 presetName: preset.name,
