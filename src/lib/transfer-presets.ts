@@ -294,6 +294,10 @@ export function quoteArg(value: string) {
     return /^[A-Za-z0-9_./:=+-]+$/.test(value) ? value : JSON.stringify(value)
 }
 
+export function buildPresetCli(preset: Pick<TransferPreset, 'mode' | 'args'>) {
+    return ['rclone', preset.mode, ...normalizeRcloneArgs(preset.args)].map(quoteArg).join(' ')
+}
+
 export function getTransferExecutionMode(
     preset: Pick<TransferPreset, 'executionMode'> | null | undefined
 ) {

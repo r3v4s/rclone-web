@@ -54,6 +54,7 @@ import {
     saveServerPreset,
 } from '@/lib/server-data'
 import {
+    buildPresetCli,
     buildPresetDraft,
     createTransferPreset,
     formatManualFlags,
@@ -248,7 +249,7 @@ export function TransferPresetsPage() {
 
     async function handleCopyPreset(preset: TransferPreset) {
         try {
-            await navigator.clipboard.writeText(preset.preview)
+            await navigator.clipboard.writeText(buildPresetCli(preset))
             toast.success(t('transferPresets.copySuccess'))
         } catch {
             toast.error(t('transferPresets.copyError'))
