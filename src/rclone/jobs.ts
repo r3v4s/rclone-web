@@ -6,6 +6,8 @@ type JobStatus = components['responses']['JobStatusResponse']['content']['applic
 
 type JobGroupStats = components['responses']['CoreStatsResponse']['content']['application/json']
 
+type JobList = components['responses']['JobListResponse']['content']['application/json']
+
 type TransferredItem =
     components['responses']['CoreTransferredResponse']['content']['application/json']['transferred'][number]
 
@@ -35,6 +37,10 @@ function getNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+function getRecord(value: unknown) {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
 function normalizeJobGroupStats(stats: JobGroupStats | null | undefined) {
     return {
         bytes: getNumber(stats?.bytes),
@@ -48,6 +54,20 @@ function normalizeJobGroupStats(stats: JobGroupStats | null | undefined) {
         transferring: Array.isArray(stats?.transferring) ? stats.transferring : [],
         checking: Array.isArray(stats?.checking) ? stats.checking : [],
     }
+}
+
+function normalizeJobList(value: JobList | null | undefined) {
+    return {
+        jobids: Array.isArray(value?.jobids) ? value.jobids.filter(isFiniteNumber) : [],
+        runningIds: Array.isArray(value?.runningIds) ? value.runningIds.filter(isFiniteNumber) : [],
+        finishedIds: Array.isArray(value?.finishedIds)
+            ? value.finishedIds.filter(isFiniteNumber)
+            : [],
+    }
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value)
 }
 
 function buildPathLabel(fs?: string, remote?: string, fallback?: string) {
@@ -209,12 +229,14 @@ async function fetchJobStatus(jobid: number) {
 }
 
 export async function fetchJobsSnapshot() {
-    const [globalStatsResponse, transferredResponse] = await Promise.all([
+    const [globalStatsResponse, transferredResponse, jobListResponse] = await Promise.all([
         rclone('/core/stats'),
         rclone('/core/transferred'),
+        rclone('/job/list').catch(() => null),
     ])
 
     const globalStats = normalizeJobGroupStats(globalStatsResponse)
+    const jobList = normalizeJobList(jobListResponse)
     const transferred: TransferredItem[] = Array.isArray(transferredResponse.transferred)
         ? transferredResponse.transferred
         : []
@@ -234,9 +256,14 @@ export async function fetchJobsSnapshot() {
     const checkingEntries = getEntries(globalStats.checking)
     const transferredEntries = getEntries(transferred)
     const jobIds = new Set(
-        [...transferringEntries, ...checkingEntries, ...transferredEntries].map(
-            ({ jobid }) => jobid
-        )
+        [
+            ...transferringEntries,
+            ...checkingEntries,
+            ...transferredEntries,
+            ...jobList.jobids.map((jobid) => ({ jobid })),
+            ...jobList.runningIds.map((jobid) => ({ jobid })),
+            ...jobList.finishedIds.map((jobid) => ({ jobid })),
+        ].map(({ jobid }) => jobid)
     )
 
     if (jobIds.size === 0) {
@@ -372,6 +399,39 @@ export async function fetchJobsSnapshot() {
         }
     }
 
+    const representedJobIds = new Set(
+        [...transferringEntries, ...checkingEntries, ...transferredEntries].map(
+            ({ jobid }) => jobid
+        )
+    )
+    const runningIds = new Set(jobList.runningIds)
+    const finishedIds = new Set(jobList.finishedIds)
+    const normalizeStatusOnlyRow = (jobid: number): JobRow | null => {
+        const status = statusMap.get(jobid)
+        if (!status) return null
+
+        const isFinished = Boolean(status.finished) || finishedIds.has(jobid)
+        const isRunning = !isFinished || runningIds.has(jobid)
+        const isFailed = isFinished && !status.success
+        const errorText = getJobErrorText(status)
+
+        return {
+            rowKey: `${jobid}:status-only`,
+            id: jobid,
+            status: isRunning ? 'running' : isFailed ? 'failed' : 'completed',
+            startTime: status.startTime,
+            source: `job/${jobid}`,
+            destination: getText(getRecord(status).group) || 'Background rclone job',
+            bytes: 0,
+            totalBytes: 0,
+            progress: isFinished && !isFailed ? 100 : 0,
+            speedLabel: `${formatBytes(0)}/s`,
+            etaLabel: isRunning ? 'Running' : isFailed ? 'Stopped' : 'Done',
+            errorText,
+            canStop: isRunning,
+        }
+    }
+
     const runningRows = [
         ...transferringEntries.map(({ jobid, item, index }) =>
             normalizeTransferringRow({
@@ -410,6 +470,10 @@ export async function fetchJobsSnapshot() {
                 status: getStatus(jobid, true, true),
             })
         )
+    const statusOnlyRows = [...jobIds]
+        .filter((jobid) => !representedJobIds.has(jobid))
+        .map(normalizeStatusOnlyRow)
+        .filter((row): row is JobRow => Boolean(row))
 
     // Sort: running first, then failed, then completed.
     const statusOrder = {
@@ -418,7 +482,7 @@ export async function fetchJobsSnapshot() {
         completed: 2,
     } satisfies Record<JobRow['status'], number>
 
-    return [...runningRows, ...failedRows, ...completedRows].sort(
+    return [...runningRows, ...statusOnlyRows, ...failedRows, ...completedRows].sort(
         (a, b) => statusOrder[a.status] - statusOrder[b.status]
     )
 }
