@@ -62,6 +62,55 @@ After login, the UI connects to:
 http://192.168.0.1:5572
 ```
 
+## Using a Custom Domain
+
+When accessing the Vite dev server through a domain, Vite may block the request
+unless the host is explicitly allowed.
+
+Do not hard-code the domain in source code. Pass it at runtime instead:
+
+```bash
+RCLONE_WEB_ALLOWED_HOSTS=rc.example.com \
+RCLONE_WEB_PUBLIC_ORIGIN=https://rc.example.com \
+npm run dev -- --host 0.0.0.0
+```
+
+If you run the UI in Docker:
+
+```bash
+docker run --rm \
+  -p 5173:5173 \
+  -e RCLONE_BIN=/bin/true \
+  -e RCLONE_WEB_ALLOWED_HOSTS=rc.example.com \
+  -e RCLONE_WEB_PUBLIC_ORIGIN=https://rc.example.com \
+  rclone-web-dev \
+  npm run dev -- --host 0.0.0.0
+```
+
+If more than one host should be allowed, use a comma-separated list:
+
+```bash
+RCLONE_WEB_ALLOWED_HOSTS=rc.example.com,192.168.0.1,localhost \
+npm run dev -- --host 0.0.0.0
+```
+
+When rclone RC is started separately, its allowed origin must match the public
+UI origin:
+
+```bash
+rclone rcd \
+  --rc-addr 0.0.0.0:5572 \
+  --rc-user dev \
+  --rc-pass dev \
+  --rc-allow-origin https://rc.example.com
+```
+
+Use the domain-based login URL:
+
+```text
+https://rc.example.com/login?url=http%3A%2F%2F192.168.0.1%3A5572&user=dev&pass=dev
+```
+
 ## If You See "URL is not configured"
 
 That message means the login page does not have an rclone RC URL saved or

@@ -58,6 +58,53 @@ http://192.168.0.1:5173/login?url=http%3A%2F%2F192.168.0.1%3A5572&user=dev&pass=
 http://192.168.0.1:5572
 ```
 
+## 커스텀 도메인으로 접속하는 경우
+
+도메인으로 Vite 개발 서버에 접속하면 Vite가 허용되지 않은 host 요청을 차단할 수 있습니다.
+
+도메인을 소스 코드에 하드코딩하지 말고, 실행 시 환경변수로 전달하세요.
+
+```bash
+RCLONE_WEB_ALLOWED_HOSTS=rc.example.com \
+RCLONE_WEB_PUBLIC_ORIGIN=https://rc.example.com \
+npm run dev -- --host 0.0.0.0
+```
+
+Docker에서 UI를 실행한다면:
+
+```bash
+docker run --rm \
+  -p 5173:5173 \
+  -e RCLONE_BIN=/bin/true \
+  -e RCLONE_WEB_ALLOWED_HOSTS=rc.example.com \
+  -e RCLONE_WEB_PUBLIC_ORIGIN=https://rc.example.com \
+  rclone-web-dev \
+  npm run dev -- --host 0.0.0.0
+```
+
+여러 host를 허용해야 한다면 콤마로 구분합니다.
+
+```bash
+RCLONE_WEB_ALLOWED_HOSTS=rc.example.com,192.168.0.1,localhost \
+npm run dev -- --host 0.0.0.0
+```
+
+rclone RC를 별도로 실행한다면 `--rc-allow-origin`도 공개 UI 주소와 맞춰야 합니다.
+
+```bash
+rclone rcd \
+  --rc-addr 0.0.0.0:5572 \
+  --rc-user dev \
+  --rc-pass dev \
+  --rc-allow-origin https://rc.example.com
+```
+
+도메인 기반 로그인 URL은 아래처럼 사용합니다.
+
+```text
+https://rc.example.com/login?url=http%3A%2F%2F192.168.0.1%3A5572&user=dev&pass=dev
+```
+
 ## "URL is not configured" 메시지가 나올 때
 
 이 메시지는 로그인 페이지에 저장되었거나 전달된 rclone RC URL이 없다는 뜻입니다.
