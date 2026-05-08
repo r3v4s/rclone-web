@@ -11,6 +11,16 @@ const RC_PORT = '5572'
 const RC_USER = 'dev'
 const RC_PASS = 'dev'
 const RC_URL = `http://${RC_ADDR}:${RC_PORT}`
+function envList(value: string | undefined) {
+    return value
+        ? value
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean)
+        : []
+}
+
+const allowedHosts = [...new Set(envList(process.env.RCLONE_WEB_ALLOWED_HOSTS))]
 
 function devRclone(): import('vite').Plugin {
     let rclone: ChildProcess | null = null
@@ -19,7 +29,9 @@ function devRclone(): import('vite').Plugin {
         apply: 'serve',
         configureServer(server) {
             const bin = process.env.RCLONE_BIN ?? 'rclone'
-            const origin = `http://localhost:${server.config.server.port ?? 5173}`
+            const origin =
+                process.env.RCLONE_WEB_PUBLIC_ORIGIN ??
+                `http://localhost:${server.config.server.port ?? 5173}`
 
             rclone = spawn(
                 bin,
@@ -80,15 +92,7 @@ export default defineConfig({
     define: {
         APP_VERSION: JSON.stringify(pkg.version),
     },
-    // server: {
-    //     proxy: {
-    //         '/rc': {
-    //             target: 'http://127.0.0.1:5572',
-    //             changeOrigin: true,
-    //             rewrite: (pathname) => pathname.replace(/^\/rc/, ''),
-    //         },
-    //     },
-    // },
+    server: allowedHosts.length > 0 ? { allowedHosts } : undefined,
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
